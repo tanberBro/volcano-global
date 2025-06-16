@@ -17,7 +17,18 @@ limitations under the License.
 package api
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	volcanoapi "volcano.sh/volcano/pkg/scheduler/api"
 )
 
+const (
+	DispatchedKey = "volcano-global.sh/dispatched"
+)
+
 type AllocatableFn func(qi *volcanoapi.QueueInfo, rbi *ResourceBindingInfo) bool
+
+// DispatchResource is need dispatch ResourceBinding resource
+type DispatchResource struct {
+	Replicas        int32               `json:"replicas"`
+	ResourceRequest corev1.ResourceList `json:"resourceRequest"`
+}

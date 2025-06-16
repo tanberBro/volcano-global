@@ -18,12 +18,13 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
+	"strings"
 
 	workv1alpha2 "github.com/karmada-io/karmada/pkg/apis/work/v1alpha2"
 	"gomodules.xyz/jsonpatch/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/klog/v2"
 
 	"volcano.sh/volcano-global/pkg/dispatcher/api"
@@ -93,10 +94,22 @@ func (dc *DispatcherCache) unSuspendResourceBinding(rb *workv1alpha2.ResourceBin
 }
 
 func (dc *DispatcherCache) patchUnSuspendResourceBinding(rb *workv1alpha2.ResourceBinding) error {
+	dispatchedResource := &api.DispatchResource{
+		Replicas:        rb.Spec.Replicas,
+		ResourceRequest: rb.Spec.ReplicaRequirements.ResourceRequest,
+	}
+	content, err := json.Marshal(dispatchedResource)
+	if err != nil {
+		return err
+	}
+
 	patchBytes, err := json.Marshal([]jsonpatch.Operation{
 		{Operation: "add", Path: "/spec/suspension", Value: map[string]interface{}{
 			"scheduling": false,
 		}},
+		{
+			Operation: "add", Path: "/metadata/annotations/" + strings.ReplaceAll(api.DispatchedKey, "/", "~1"), Value: string(content),
+		},
 	})
 	if err != nil {
 		return err

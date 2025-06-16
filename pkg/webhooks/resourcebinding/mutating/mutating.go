@@ -18,6 +18,7 @@ package mutating
 
 import (
 	"fmt"
+	"reflect"
 
 	workv1alpha2 "github.com/karmada-io/karmada/pkg/apis/work/v1alpha2"
 	"gomodules.xyz/jsonpatch/v2"
@@ -29,6 +30,7 @@ import (
 	"volcano.sh/volcano/pkg/webhooks/router"
 	"volcano.sh/volcano/pkg/webhooks/util"
 
+	"volcano.sh/volcano-global/pkg/dispatcher/api"
 	"volcano.sh/volcano-global/pkg/webhooks/decoder"
 	"volcano.sh/volcano-global/pkg/workload"
 )
@@ -59,9 +61,9 @@ var service = &router.AdmissionService{
 }
 
 func ResourceBindings(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
-	if ar.Request == nil || ar.Request.Operation != admissionv1.Create {
-		// This error should not be happened; We have set the rule for CREATE operation only.
-		return util.ToAdmissionResponse(fmt.Errorf("expect operation to be '%s'", admissionv1.Create))
+	if ar.Request == nil || (ar.Request.Operation != admissionv1.Create && ar.Request.Operation != admissionv1.Update) {
+		// This error should not be happened; We have set the rule for UPDATE operation only.
+		return util.ToAdmissionResponse(fmt.Errorf("expect operation to be '%s', but got '%s'", admissionv1.Create+" or "+admissionv1.Update, ar.Request.Operation))
 	}
 	klog.V(3).Infof("Mutating %s operation for ResourceBinding <%s/%s>.",
 		ar.Request.Operation, ar.Request.Namespace, ar.Request.Name)
@@ -75,6 +77,7 @@ func ResourceBindings(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResp
 
 	// This should not happen, the `suspend` will update to true by this webhook when create the resourceBinding.
 	if rb.Spec.SchedulingSuspended() {
+		klog.V(3).Infof("ResourceBinding <%s/%s> is alrady suspended.", rb.Namespace, rb.Name)
 		return response
 	}
 
@@ -88,6 +91,25 @@ func ResourceBindings(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResp
 	if !isWorkload {
 		klog.Errorf("ResourceBinding <%s/%s> is not a workload, skip suspend it.",
 			rb.Namespace, rb.Name)
+		return response
+	}
+
+	// Check  willDispatchResource is equal LastDispatchedContent, skip suspend if.
+	willDispatchResource := &api.DispatchResource{
+		Replicas:        rb.Spec.Replicas,
+		ResourceRequest: rb.Spec.ReplicaRequirements.ResourceRequest,
+	}
+	lastDispatchedResource := &api.DispatchResource{}
+	if rb.Annotations != nil {
+		if dc, ok := rb.Annotations[api.DispatchedKey]; ok {
+			if err = json.Unmarshal([]byte(dc), lastDispatchedResource); err != nil {
+				klog.Errorf("Failed to unmarshal ResourceBinding <%s/%s> last dispatched content, err: %v.", rb.Namespace, rb.Name, err)
+			}
+		}
+	}
+
+	if reflect.DeepEqual(lastDispatchedResource, willDispatchResource) {
+		klog.V(3).Infof("ResourceBinding <%s/%s> will dispatch content is euqal last dispatched content, skip suspend it.", rb.Namespace, rb.Name)
 		return response
 	}
 
