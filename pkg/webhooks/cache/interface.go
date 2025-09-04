@@ -14,16 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package plugins
+package cache
 
-import (
-	"volcano.sh/volcano-global/pkg/dispatcher/framework"
-	"volcano.sh/volcano-global/pkg/dispatcher/plugins/capacity"
-	"volcano.sh/volcano-global/pkg/dispatcher/plugins/priority"
-)
+type WebhookCacheInterface interface {
+	// Run the informers, start the cache.
+	Run(stopCh <-chan struct{})
 
-// Register the plugins to plugin manager.
-func init() {
-	framework.PluginManagerInstance.RegisterPluginBuilder(priority.PluginName, priority.New)
-	framework.PluginManagerInstance.RegisterPluginBuilder(capacity.PluginName, capacity.New)
+	// Snapshot the cache's resource.
+	Snapshot() *DispatcherCacheSnapshot
 }

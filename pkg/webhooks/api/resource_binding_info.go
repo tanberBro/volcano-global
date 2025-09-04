@@ -20,37 +20,24 @@ import (
 	workv1alpha2 "github.com/karmada-io/karmada/pkg/apis/work/v1alpha2"
 	"k8s.io/apimachinery/pkg/types"
 	volcanoapi "volcano.sh/volcano/pkg/scheduler/api"
-)
 
-type DispatchStatus int16
-
-const (
-	Suspended DispatchStatus = 1 << iota
-	UnSuspending
-	UnSuspended
+	"volcano.sh/volcano-global/pkg/workload"
 )
 
 type ResourceBindingInfo struct {
-	ResourceBinding   *workv1alpha2.ResourceBinding
-	ResourceUID       types.UID
-	Queue             string
-	PriorityClassName string
-	DispatchStatus    DispatchStatus
-	ResReq            *volcanoapi.Resource
-
-	// Update it when snapshot.
-	Priority int32
+	ResourceBinding *workv1alpha2.ResourceBinding
+	ResourceUID     types.UID
+	Queue           string
+	ResReq          *volcanoapi.Resource
+	Workload        workload.Workload
 }
 
 func (rbi *ResourceBindingInfo) DeepCopy() *ResourceBindingInfo {
 	return &ResourceBindingInfo{
-		ResourceBinding:   rbi.ResourceBinding.DeepCopy(),
-		ResourceUID:       rbi.ResourceUID,
-		Queue:             rbi.Queue,
-		PriorityClassName: rbi.PriorityClassName,
-		DispatchStatus:    rbi.DispatchStatus,
-		ResReq:            rbi.ResReq.Clone(),
-
-		Priority: rbi.Priority,
+		ResourceBinding: rbi.ResourceBinding.DeepCopy(),
+		ResourceUID:     rbi.ResourceUID,
+		Queue:           rbi.Queue,
+		ResReq:          rbi.ResReq.Clone(),
+		Workload:        rbi.Workload,
 	}
 }

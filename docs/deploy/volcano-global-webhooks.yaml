@@ -19,3 +19,24 @@ webhooks:
         scope: "Namespaced"
     sideEffects: None
     timeoutSeconds: 3
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: volcano-admission-service-resourcebindings-validate
+webhooks:
+  - name: validateresourcebindings.volcano.sh
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      url: https://volcano-global-webhook.volcano-global.svc:443/resourcebindings/validate
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - operations: ["CREATE","UPDATE"]
+        apiGroups: ["work.karmada.io"]
+        apiVersions: ["v1alpha2"]
+        resources: ["resourcebindings"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 3

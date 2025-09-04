@@ -19,7 +19,6 @@ package cache
 import (
 	clusterv1alpha1 "github.com/karmada-io/karmada/pkg/apis/cluster/v1alpha1"
 	workv1alpha2 "github.com/karmada-io/karmada/pkg/apis/work/v1alpha2"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	schedulingv1beta1 "volcano.sh/apis/pkg/apis/scheduling/v1beta1"
@@ -36,19 +35,6 @@ func convertToQueue(obj interface{}) *schedulingv1beta1.Queue {
 		return nil
 	}
 	return queue
-}
-
-func convertToPriorityClass(obj interface{}) *schedulingv1.PriorityClass {
-	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		obj = tombstone.Obj
-	}
-
-	priorityClass, ok := obj.(*schedulingv1.PriorityClass)
-	if !ok {
-		klog.Errorf("Can't Convert obj to *schedulingv1.PriorityClass, obj: %v", obj)
-		return nil
-	}
-	return priorityClass
 }
 
 func convertToResourceBinding(obj interface{}) *workv1alpha2.ResourceBinding {

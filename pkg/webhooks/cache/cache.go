@@ -26,12 +26,9 @@ import (
 	karmadainformerfactory "github.com/karmada-io/karmada/pkg/generated/informers/externalversions"
 	informerclusterv1alpha1 "github.com/karmada-io/karmada/pkg/generated/informers/externalversions/cluster/v1alpha1"
 	informerworkv1aplha2 "github.com/karmada-io/karmada/pkg/generated/informers/externalversions/work/v1alpha2"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
-	schedv1 "k8s.io/client-go/informers/scheduling/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
@@ -44,19 +41,17 @@ import (
 	schedulinginformer "volcano.sh/apis/pkg/client/informers/externalversions/scheduling/v1beta1"
 	schedulingapi "volcano.sh/volcano/pkg/scheduler/api"
 
-	"volcano.sh/volcano-global/pkg/dispatcher/api"
-	"volcano.sh/volcano-global/pkg/dispatcher/cache/utils"
+	"volcano.sh/volcano-global/pkg/webhooks/api"
+	"volcano.sh/volcano-global/pkg/webhooks/cache/utils"
 )
 
-type DispatcherCacheOption struct {
-	WorkerNum        uint32
+type WebhookCacheOption struct {
 	DefaultQueueName string
 	RestConfig       *rest.Config
 }
 
-type DispatcherCache struct {
-	mutex     sync.Mutex
-	workerNum uint32
+type WebhookCache struct {
+	mutex sync.Mutex
 
 	kubeClient    kubernetes.Interface
 	dynamicClient dynamic.Interface
@@ -72,21 +67,17 @@ type DispatcherCache struct {
 	queues        map[string]*schedulingapi.QueueInfo
 	defaultQueue  string
 
-	priorityClassInformer schedv1.PriorityClassInformer
-	priorityClasses       map[string]*schedulingv1.PriorityClass
-	defaultPriorityClass  *schedulingv1.PriorityClass
-
 	resourceBindingInformer informerworkv1aplha2.ResourceBindingInformer
-	// resourceBindings[namespace][name] = target ResourceBinding.
+	// resourceBindings[namespace][Name] = target ResourceBinding.
 	resourceBindings map[string]map[string]*workv1alpha2.ResourceBinding
 
 	// The infos only save basic information like ResourceBinding, ResourceUID, Status in the cache,
 	// Queue, and Priority will update when Snapshot.
-	// resourceBindingInfos[namespace][name] = target ResourceBindingInfo.
+	// resourceBindingInfos[namespace][Name] = target ResourceBindingInfo.
 	resourceBindingInfos map[string]map[string]*api.ResourceBindingInfo
 
 	clusterInformer informerclusterv1alpha1.ClusterInformer
-	// clusters[name] = target Cluster
+	// clusters[Name] = target Cluster
 	clusters map[string]*clusterv1alpha1.Cluster
 
 	// Its queue for unsuspend the ResourceBinding, when a ResourceBinding finish dispatch,
@@ -94,7 +85,7 @@ type DispatcherCache struct {
 	unSuspendRBTaskQueue workqueue.Interface
 }
 
-func NewDispatcherCache(option *DispatcherCacheOption) DispatcherCacheInterface {
+func NewWebhookCache(option *WebhookCacheOption) WebhookCacheInterface {
 	config := option.RestConfig
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -121,8 +112,7 @@ func NewDispatcherCache(option *DispatcherCacheOption) DispatcherCacheInterface 
 		panic(fmt.Sprintf("failed to init grp, with err: %v", err))
 	}
 
-	sc := &DispatcherCache{
-		workerNum: option.WorkerNum,
+	sc := &WebhookCache{
 
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,
@@ -136,7 +126,6 @@ func NewDispatcherCache(option *DispatcherCacheOption) DispatcherCacheInterface 
 
 		queues:           map[string]*schedulingapi.QueueInfo{},
 		defaultQueue:     option.DefaultQueueName,
-		priorityClasses:  map[string]*schedulingv1.PriorityClass{},
 		resourceBindings: map[string]map[string]*workv1alpha2.ResourceBinding{},
 
 		resourceBindingInfos: map[string]map[string]*api.ResourceBindingInfo{},
@@ -152,14 +141,6 @@ func NewDispatcherCache(option *DispatcherCacheOption) DispatcherCacheInterface 
 		UpdateFunc: sc.updateQueue,
 		DeleteFunc: sc.deleteQueue,
 	})
-
-	sc.priorityClassInformer = sc.informerFactory.Scheduling().V1().PriorityClasses()
-	sc.priorityClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    sc.addPriorityClass,
-		UpdateFunc: sc.updatePriorityClass,
-		DeleteFunc: sc.deletePriorityClass,
-	})
-
 	sc.resourceBindingInformer = sc.karmadaInformerFactor.Work().V1alpha2().ResourceBindings()
 	sc.resourceBindingInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    sc.addResourceBinding,
@@ -176,30 +157,26 @@ func NewDispatcherCache(option *DispatcherCacheOption) DispatcherCacheInterface 
 	return sc
 }
 
-func (dc *DispatcherCache) Run(stopCh <-chan struct{}) {
+func (wc *WebhookCache) Run(stopCh <-chan struct{}) {
 	// Start the factories, and wait for cache sync
-	dc.informerFactory.Start(stopCh)
-	dc.volcanoInformerFactory.Start(stopCh)
-	dc.karmadaInformerFactor.Start(stopCh)
-	for informerType, ok := range dc.informerFactory.WaitForCacheSync(stopCh) {
+	wc.informerFactory.Start(stopCh)
+	wc.volcanoInformerFactory.Start(stopCh)
+	wc.karmadaInformerFactor.Start(stopCh)
+	for informerType, ok := range wc.informerFactory.WaitForCacheSync(stopCh) {
 		if !ok {
 			klog.Errorf("Caches failed to sync: %v", informerType)
 		}
 	}
-	for informerType, ok := range dc.volcanoInformerFactory.WaitForCacheSync(stopCh) {
+	for informerType, ok := range wc.volcanoInformerFactory.WaitForCacheSync(stopCh) {
 		if !ok {
 			klog.Errorf("Caches failed to sync: %v", informerType)
 		}
 	}
-	for informerType, ok := range dc.karmadaInformerFactor.WaitForCacheSync(stopCh) {
+	for informerType, ok := range wc.karmadaInformerFactor.WaitForCacheSync(stopCh) {
 		if !ok {
 			klog.Errorf("Caches failed to sync: %v", informerType)
 		}
 	}
 
-	for i := uint32(1); i <= dc.workerNum; i++ {
-		go wait.Until(dc.unSuspendResourceBindingTaskWorker, 0, stopCh)
-	}
-
-	klog.V(2).Infof("DispatcherCache completes initialization and start to run.")
+	klog.V(2).Infof("WebhookCache completes initialization and start to run.")
 }

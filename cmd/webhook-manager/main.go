@@ -25,11 +25,10 @@ import (
 	"github.com/spf13/pflag"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog/v2"
-	"volcano.sh/volcano/cmd/webhook-manager/app"
-	"volcano.sh/volcano/cmd/webhook-manager/app/options"
 	"volcano.sh/volcano/pkg/version"
 
-	_ "volcano.sh/volcano-global/pkg/webhooks/resourcebinding/mutating"
+	"volcano.sh/volcano-global/cmd/webhook-manager/app"
+	"volcano.sh/volcano-global/cmd/webhook-manager/app/options"
 )
 
 func main() {
